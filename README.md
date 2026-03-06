@@ -72,3 +72,54 @@ A typical workflow is:
 1. Load required packages:
    ```r
    source("packages.r")
+2. Load functions:
+
+source("functions.r")
+
+3. Run the empirical analysis:
+
+source("region.r")
+
+4. Run the simulation study:
+
+source("empirical study.r")
+
+5. Summarize and plot results:
+
+source("empirical results.r")
+
+## Output
+
+The scripts produce:
+
+posterior mean estimates
+
+posterior variance comparisons
+
+spatial maps
+
+MSE comparisons
+
+coverage summaries
+
+interval score summaries
+
+exported figures in .png format
+
+## Notes
+
+The code currently uses Missouri county-level spatial data in the empirical example.
+
+The simulation study compares:
+
+direct estimates
+
+univariate spatial models
+
+the proposed multi-type joint model
+
+The README can be expanded later to include a formal model description, data dictionary, and reproducible example once the input data files are organized for public release.
+
+## Author
+
+Zewei Kong
