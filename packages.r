@@ -45,4 +45,4 @@ suppressPackageStartupMessages({
   library(scales)
 })
 
-message("✅ All required packages are loaded and ready.")
+message("All required packages are loaded and ready.")
