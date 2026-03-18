@@ -43,6 +43,7 @@ suppressPackageStartupMessages({
   library(rlang)
   library(dplyr)
   library(scales)
+  library(spatialreg)
 })
 
 message("All required packages are loaded and ready.")

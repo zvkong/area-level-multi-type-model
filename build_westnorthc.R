@@ -3,7 +3,7 @@ library(dplyr)
 library(sf)
 library(purrr)
 library(spdep)
-
+library(spatialreg)
 states_use <- c("IA", "KS", "MN", "MO", "NE", "ND", "SD")
 year_use <- 2021
 z_90 <- qnorm(0.95)
@@ -86,7 +86,7 @@ bachelor_df <-
   fetch_acs_states(
     variables = "DP02_0068PE",
     geometry = FALSE,
-    survey = "acs5/profile"
+    survey = "acs5"
   ) %>%
   arrange(GEOID) %>%
   transmute(GEOID, X_bachelor = estimate / 100)
@@ -95,7 +95,7 @@ snap_df <-
   fetch_acs_states(
     variables = "DP03_0074PE",
     geometry = FALSE,
-    survey = "acs5/profile"
+    survey = "acs5"
   ) %>%
   arrange(GEOID) %>%
   transmute(GEOID, X_snap = estimate / 100)
@@ -161,3 +161,4 @@ idx <- large_abs(eig$values, 0.25)
 S <- eig$vectors[, idx, drop = FALSE]
 
 save(MO_county_sf, income21.ed, povrate21, X_white, X_bachelor, X_snap, X_1, X_2, B, S, file = "westnorthc.Rdata")
+
