@@ -1,66 +1,106 @@
 source("packages.r")
 source("functions.r")
-load("westnorthc.Rdata")
+load("westnorth_region_clean.RData")
 
-choose_pal <- rev(RColorBrewer::brewer.pal(9, "RdBu"))
+choose_pal <- hcl.colors(9, "YlOrRd", rev = TRUE)
 
 eps <- 1e-6
-p_direct <- pmin(pmax(povrate21$pov_rate, eps), 1 - eps)
-mu1_est <- income21.ed$lg_income
-
-Z_1 <- as.numeric(scale(mu1_est))
-D <- income21.ed$lg_var / stats::var(mu1_est)
-m <- p_direct * (1 - p_direct) / pmax(povrate21$var_pov, 1e-12)
-m <- pmax(m, 1e-8)
-Z_2 <- m * p_direct
-
 nburn <- 1000
 nsim <- 1000
 nthin <- 1
 
-fit_shared <- block_sampler_share_RE(
-  X_1, X_2, Z_1, Z_2, D, m, S,
+mu1_direct <- income_df$log_income
+p_direct <- pmin(pmax(poverty_df$poverty_rate, eps), 1 - eps)
+mu2_direct <- qlogis(p_direct)
+
+var_income_direct <- income_df$log_income_variance
+var_p_direct <- poverty_df$poverty_rate_variance
+var_logit_direct <- var_p_direct / (p_direct * (1 - p_direct))^2
+
+design_obj <- prep_design(
+  mu1 = mu1_direct,
+  mu2 = mu2_direct,
+  var_D = var_income_direct,
+  v = var_logit_direct
+)
+
+fits <- run_models(
+  X_1 = X_income,
+  X_2 = X_poverty,
+  Z1 = design_obj$Z1,
+  Z2 = design_obj$Z2,
+  D = design_obj$D,
+  m = design_obj$m,
+  S = basis_matrix,
   nburn = nburn,
   nsim = nsim,
   nthin = nthin,
-  tau_1_init = 1,
-  tau_2_init = 1,
-  tau_3_init = 1
+  tau1 = 1,
+  tau2 = 1,
+  tau3 = 1,
+  beta_prec = 0.2
 )
 
-fit_binom_uni <- SRE_binomial(X_2, Z_2, m, S, nburn, nsim, nthin)
-fit_gauss_uni <- SRE_sampler(X_1, Z_1, D, S, nburn, nsim, nthin)
+fit_shared <- fits$shared
+fit_gauss_uni <- fits$gauss_uni
+fit_binom_uni <- fits$binom_uni
 
 est <- extract_estimates(
   fit_shared,
   fit_gauss_uni,
   fit_binom_uni,
-  mu1_est = mu1_est
+  mu1_mean = design_obj$mu1_mean,
+  mu1_sd = design_obj$mu1_sd
 )
 
-plot_facets <- function(sf_obj, fill_vec_list, fill_name, title) {
-  labs <- names(fill_vec_list)
+make_facet_sf <- function(sf_obj, value_list, value_name) {
+  labs <- names(value_list)
 
-  make_one <- function(v, lab) {
-    x <- sf_obj
-    x[[fill_name]] <- as.numeric(v)
-    x$type <- lab
-    x
+  build_one <- function(values, lab) {
+    out <- sf_obj
+    out[[value_name]] <- as.numeric(values)
+    out$model_type <- lab
+    out
   }
 
-  df_all <- do.call(rbind, Map(make_one, fill_vec_list, labs))
+  dplyr::bind_rows(Map(build_one, value_list, labs))
+}
 
-  ggplot(df_all, aes(fill = .data[[fill_name]])) +
-    geom_sf(colour = NA) +
-    facet_wrap(~type) +
-    labs(title = title, fill = fill_name) +
-    scale_fill_gradientn(colours = choose_pal, na.value = NA) +
+plot_facets <- function(
+  sf_obj,
+  value_list,
+  value_name,
+  title,
+  legend_lab = value_name,
+  prob = 0.95
+) {
+  plot_df <- make_facet_sf(sf_obj, value_list, value_name)
+
+  vals <- plot_df[[value_name]]
+  vals <- vals[is.finite(vals)]
+  vmin <- min(vals, na.rm = TRUE)
+  vmax <- stats::quantile(vals, prob, na.rm = TRUE)
+
+  ggplot(plot_df) +
+    geom_sf(aes(fill = .data[[value_name]]), colour = NA) +
+    facet_wrap(~model_type) +
+    scale_fill_gradientn(
+      colours = choose_pal,
+      limits = c(vmin, vmax),
+      oob = scales::squish,
+      name = legend_lab
+    ) +
+    labs(
+      title = title,
+      caption = "Data source: 2017–2021 ACS 5-year estimates, U.S. Census Bureau"
+    ) +
     theme_minimal(base_size = 12) +
     theme(
       panel.grid.major = element_blank(),
       panel.grid.minor = element_blank(),
       strip.background = element_rect(fill = "grey95", colour = NA),
-      strip.text = element_text(face = "bold")
+      strip.text = element_text(face = "bold"),
+      plot.title = element_text(face = "bold")
     )
 }
 
@@ -70,83 +110,93 @@ p_shared_mean <- est$p_gibbs
 p_uni_mean <- est$p_ind
 
 p_income <- plot_facets(
-  sf_obj = MO_county_sf,
-  fill_vec_list = list(
-    "Direct estimate" = mu1_est,
+  sf_obj = region_tract_sf,
+  value_list = list(
+    "Direct estimate" = mu1_direct,
     "Univariate model" = mu1_uni_mean,
     "Multi-type model" = mu1_shared_mean
   ),
-  fill_name = "log_median_income",
-  title = "Log-median income (2017-2021)"
+  value_name = "log_median_income",
+  title = "Log median income"
 )
-print(p_income)
 
-p_pov <- plot_facets(
-  sf_obj = povrate21,
-  fill_vec_list = list(
+p_poverty <- plot_facets(
+  sf_obj = region_tract_sf,
+  value_list = list(
     "Direct estimate" = p_direct,
     "Univariate model" = p_uni_mean,
     "Multi-type model" = p_shared_mean
   ),
-  fill_name = "pov_rate",
-  title = "Poverty rate (2017-2021)"
+  value_name = "poverty_rate",
+  title = "Poverty rate"
 )
-print(p_pov)
 
-mu1_scale <- stats::sd(mu1_est)
-var_mu1_shared <- apply(fit_shared$Mu_1.chain, 1, var) * (mu1_scale^2)
-var_mu1_uni <- apply(fit_gauss_uni$Mu.chain, 1, var) * (mu1_scale^2)
-var_p_shared <- apply(plogis(fit_shared$Mu_2.chain), 1, var)
-var_p_uni <- apply(plogis(fit_binom_uni$Mu.chain), 1, var)
+print(p_income)
+print(p_poverty)
 
-p_var_g <- plot_facets(
-  sf_obj = MO_county_sf,
-  fill_vec_list = list(
-    "Direct estimate" = income21.ed$lg_var,
+var_mu1_shared <- apply(fit_shared$Mu_1.chain, 1, stats::var) * (design_obj$mu1_sd^2)
+var_mu1_uni <- apply(fit_gauss_uni$Mu.chain, 1, stats::var) * (design_obj$mu1_sd^2)
+
+var_p_shared <- apply(plogis(fit_shared$Mu_2.chain), 1, stats::var)
+var_p_uni <- apply(plogis(fit_binom_uni$Mu.chain), 1, stats::var)
+
+p_var_income <- plot_facets(
+  sf_obj = region_tract_sf,
+  value_list = list(
+    "Direct estimate" = var_income_direct,
     "Univariate model" = var_mu1_uni,
     "Multi-type model" = var_mu1_shared
   ),
-  fill_name = "var_log_income",
+  value_name = "var_log_income",
   title = "Posterior variance: Gaussian response"
 )
-print(p_var_g)
 
-p_var_b <- plot_facets(
-  sf_obj = povrate21,
-  fill_vec_list = list(
-    "Direct estimate" = povrate21$var_pov,
+p_var_poverty <- plot_facets(
+  sf_obj = region_tract_sf,
+  value_list = list(
+    "Direct estimate" = var_p_direct,
     "Univariate model" = var_p_uni,
     "Multi-type model" = var_p_shared
   ),
-  fill_name = "var_pov_rate",
+  value_name = "var_poverty_rate",
   title = "Posterior variance: Binomial response"
 )
-print(p_var_b)
 
-plot(var_mu1_shared, var_mu1_uni,
-     xlab = "Multi-type model variance",
-     ylab = "Univariate model variance")
+print(p_var_income)
+print(p_var_poverty)
+
+plot(
+  var_mu1_shared,
+  var_mu1_uni,
+  xlab = "Multi-type model variance",
+  ylab = "Univariate model variance",
+  main = "Gaussian response"
+)
 abline(0, 1, col = "red", lty = 2, lwd = 2)
 
 boxplot(
   list(
-    "UNIS / Direct" = var_mu1_uni / income21.ed$lg_var,
-    "MUTS / Direct" = var_mu1_shared / income21.ed$lg_var,
+    "UNIS / Direct" = var_mu1_uni / var_income_direct,
+    "MUTS / Direct" = var_mu1_shared / var_income_direct,
     "MUTS / UNIS" = var_mu1_shared / var_mu1_uni
   ),
   main = "Variance ratios: Gaussian"
 )
 abline(h = 1, col = "red", lwd = 2, lty = 2)
 
-plot(var_p_shared, var_p_uni,
-     xlab = "Multi-type model variance",
-     ylab = "Univariate model variance")
+plot(
+  var_p_shared,
+  var_p_uni,
+  xlab = "Multi-type model variance",
+  ylab = "Univariate model variance",
+  main = "Binomial response"
+)
 abline(0, 1, col = "red", lty = 2, lwd = 2)
 
 boxplot(
   list(
-    "UNIS / Direct" = var_p_uni / povrate21$var_pov,
-    "MUTS / Direct" = var_p_shared / povrate21$var_pov,
+    "UNIS / Direct" = var_p_uni / var_p_direct,
+    "MUTS / Direct" = var_p_shared / var_p_direct,
     "MUTS / UNIS" = var_p_shared / var_p_uni
   ),
   main = "Variance ratios: Binomial"
@@ -157,6 +207,8 @@ save(
   fit_shared,
   fit_gauss_uni,
   fit_binom_uni,
+  mu1_direct,
+  p_direct,
   mu1_shared_mean,
   mu1_uni_mean,
   p_shared_mean,
@@ -165,5 +217,9 @@ save(
   var_mu1_uni,
   var_p_shared,
   var_p_uni,
-  file = "region results.RData"
+  p_income,
+  p_poverty,
+  p_var_income,
+  p_var_poverty,
+  file = "region_results.RData"
 )

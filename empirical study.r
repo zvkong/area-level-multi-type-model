@@ -1,46 +1,68 @@
-suppressPackageStartupMessages({ library(spdep) })
+suppressPackageStartupMessages({
+  library(spdep)
+  library(sf)
+  library(dplyr)
+})
 
 source("packages.r")
-load("SD cleaned.RData")
 source("functions.r")
+load("SD cleaned.RData")
 
-MO_nb <- poly2nb(MO_county_sf, queen = TRUE)
-W_list <- nb2listw(MO_nb, style = "B", zero.policy = TRUE)
+tract_nb <- poly2nb(tract_sf, queen = TRUE)
+W_list <- nb2listw(tract_nb, style = "B", zero.policy = TRUE)
 B <- as.matrix(as_dgRMatrix_listw(W_list))
+
 eig <- eigen(B, symmetric = TRUE)
-idx <- large_abs(eig$values, 0.25)
+idx <- large_abs(eig$values, 0.5)
 S <- eig$vectors[, idx, drop = FALSE]
 
 X_1 <- as.matrix(cbind(1, X_white))
 X_2 <- as.matrix(cbind(1, X_white))
 
-Mu1_true <- income21.ed$lg_income
 eps <- 1e-6
+Mu1_true <- income21.ed$lg_income
 p_true <- pmin(pmax(povrate21$pov_rate, eps), 1 - eps)
 Mu2_true <- qlogis(p_true)
 N <- length(Mu1_true)
-var_D <- income21.ed$lg_var
+
+inflation_factor <- 1
+var_D <- income21.ed$lg_var * inflation_factor
 v_rate <- povrate21$var_pov
-v <- (1 / (p_true * (1 - p_true)))^2 * v_rate
+v <- ((1 / (p_true * (1 - p_true)))^2 * v_rate) * inflation_factor
 
 n_data <- 100
 nburn <- 1000
 nsim <- 1000
 nthin <- 1
 
-Mu1_dir <- Mu2_dir <- Z1_set <- Z2_set <- Pi_set <- matrix(0, N, n_data)
-G_gibbs <- G_ind <- P_gibbs <- P_ind <- matrix(0, N, n_data)
-GG_l <- GG_u <- GI_l <- GI_u <- GB_l <- GB_u <- IB_l <- IB_u <- matrix(0, N, n_data)
+Mu1_dir <- matrix(0, N, n_data)
+Mu2_dir <- matrix(0, N, n_data)
+Z1_set <- matrix(0, N, n_data)
+Z2_set <- matrix(0, N, n_data)
+Pi_set <- matrix(0, N, n_data)
 
-pb <- utils::txtProgressBar(min = 0, max = n_data, style = 3)
-on.exit(close(pb), add = TRUE)
+G_gibbs <- matrix(0, N, n_data)
+G_ind <- matrix(0, N, n_data)
+P_gibbs <- matrix(0, N, n_data)
+P_ind <- matrix(0, N, n_data)
+
+GG_l <- matrix(0, N, n_data)
+GG_u <- matrix(0, N, n_data)
+GI_l <- matrix(0, N, n_data)
+GI_u <- matrix(0, N, n_data)
+GB_l <- matrix(0, N, n_data)
+GB_u <- matrix(0, N, n_data)
+IB_l <- matrix(0, N, n_data)
+IB_u <- matrix(0, N, n_data)
 
 for (i in seq_len(n_data)) {
-  cat(sprintf("\nRunning dataset %d/%d", i, n_data))
-  flush.console()
+  cat("\n==================================================\n")
+  cat(sprintf("   Starting Dataset %d / %d\n", i, n_data))
+  cat("==================================================\n")
 
   set.seed(i)
-  drw <- draw_direct(N, Mu1_true, Mu2_true, var_D, v)
+
+  drw <- draw_direct_independent(Mu1_true, Mu2_true, var_D, v)
   des <- prep_design(drw$mu1, drw$mu2, var_D, v)
 
   Mu1_dir[, i] <- drw$mu1
@@ -50,20 +72,32 @@ for (i in seq_len(n_data)) {
   Pi_set[, i] <- des$pi_hat
 
   fits <- run_models(
-    X_1, X_2, des$Z1, des$Z2, des$D, des$m, S,
+    X_1 = X_1,
+    X_2 = X_2,
+    Z1 = des$Z1,
+    Z2 = des$Z2,
+    D = des$D,
+    m = des$m,
+    S = S,
     nburn = nburn,
     nsim = nsim,
     nthin = nthin,
-    tau1 = 2,
-    tau2 = -2,
-    tau3 = 1
+    tau1 = 1,
+    tau2 = 0,
+    tau3 = 0,
+    a_zeta_1 = 2,
+    b_zeta_1 = 0.5,
+    a_zeta_2 = 2,
+    b_zeta_2 = 0.5,
+    beta_prec = 0.01
   )
 
   est <- extract_estimates(
     fits$shared,
     fits$gauss_uni,
     fits$binom_uni,
-    mu1_est = drw$mu1
+    mu1_mean = des$mu1_mean,
+    mu1_sd = des$mu1_sd
   )
 
   GG_l[, i] <- est$gibbs_g_l
@@ -79,27 +113,17 @@ for (i in seq_len(n_data)) {
   G_ind[, i] <- est$mu1_ind
   P_gibbs[, i] <- est$p_gibbs
   P_ind[, i] <- est$p_ind
-
-  utils::setTxtProgressBar(pb, i)
 }
 
-cat("\n")
+cat("\n\nAll datasets completed. Calculating evaluation metrics...\n")
 
-mse_dir_g <- vapply(1:N, function(i) MSE(Mu1_true[i], Mu1_dir[i, ]), 0.0)
-mse_gibbs_g <- vapply(1:N, function(i) MSE(Mu1_true[i], G_gibbs[i, ]), 0.0)
-mse_ind_g <- vapply(1:N, function(i) MSE(Mu1_true[i], G_ind[i, ]), 0.0)
+mse_dir_g <- vapply(seq_len(N), function(i) MSE(Mu1_true[i], Mu1_dir[i, ]), 0.0)
+mse_gibbs_g <- vapply(seq_len(N), function(i) MSE(Mu1_true[i], G_gibbs[i, ]), 0.0)
+mse_ind_g <- vapply(seq_len(N), function(i) MSE(Mu1_true[i], G_ind[i, ]), 0.0)
 
-mse_dir_b <- vapply(1:N, function(i) MSE(p_true[i], Pi_set[i, ]), 0.0)
-mse_gibbs_b <- vapply(1:N, function(i) MSE(p_true[i], P_gibbs[i, ]), 0.0)
-mse_ind_b <- vapply(1:N, function(i) MSE(p_true[i], P_ind[i, ]), 0.0)
-
-bias_dir_g <- abs(rowMeans(Mu1_dir) - Mu1_true)
-bias_gibbs_g <- abs(rowMeans(G_gibbs) - Mu1_true)
-bias_ind_g <- abs(rowMeans(G_ind) - Mu1_true)
-
-bias_dir_b <- abs(rowMeans(Pi_set) - p_true)
-bias_gibbs_b <- abs(rowMeans(P_gibbs) - p_true)
-bias_ind_b <- abs(rowMeans(P_ind) - p_true)
+mse_dir_b <- vapply(seq_len(N), function(i) MSE(p_true[i], Pi_set[i, ]), 0.0)
+mse_gibbs_b <- vapply(seq_len(N), function(i) MSE(p_true[i], P_gibbs[i, ]), 0.0)
+mse_ind_b <- vapply(seq_len(N), function(i) MSE(p_true[i], P_ind[i, ]), 0.0)
 
 Mu1_mat <- matrix(Mu1_true, nrow = N, ncol = n_data)
 p_mat <- matrix(p_true, nrow = N, ncol = n_data)
@@ -114,68 +138,88 @@ IS_ind_g <- rowMeans(interval_score(GI_l, GI_u, Mu1_mat))
 IS_gibbs_b <- rowMeans(interval_score(GB_l, GB_u, p_mat))
 IS_ind_b <- rowMeans(interval_score(IB_l, IB_u, p_mat))
 
-cat("\nGaussian\n")
-cat(
-  "mean(MSE) Direct / Shared / Univariate: ",
-  mean(mse_dir_g), " / ", mean(mse_gibbs_g), " / ", mean(mse_ind_g), "\n",
-  sep = ""
-)
-cat(
-  "mean(Bias) Direct / Shared / Univariate: ",
-  mean(bias_dir_g), " / ", mean(bias_gibbs_g), " / ", mean(bias_ind_g), "\n",
-  sep = ""
-)
-cat(
-  "mean(Coverage) Shared / Univariate: ",
-  mean(cov_gibbs_g), " / ", mean(cov_ind_g), "\n",
-  sep = ""
-)
-cat(
-  "mean(Interval Score) Shared / Univariate: ",
-  mean(IS_gibbs_g), " / ", mean(IS_ind_g), "\n",
-  sep = ""
+tab_gaus_fmt <- data.frame(
+  Type = c("Direct estimate", "Univariate model", "Multi-type model"),
+  MSE = c(mean(mse_dir_g), mean(mse_ind_g), mean(mse_gibbs_g)) * 1e3,
+  Coverage = c(NA_real_, mean(cov_ind_g), mean(cov_gibbs_g)),
+  IS = c(NA_real_, mean(IS_ind_g), mean(IS_gibbs_g)),
+  stringsAsFactors = FALSE,
+  check.names = FALSE
 )
 
-cat("\nBinomial\n")
-cat(
-  "mean(MSE) Direct / Shared / Univariate: ",
-  mean(mse_dir_b), " / ", mean(mse_gibbs_b), " / ", mean(mse_ind_b), "\n",
-  sep = ""
+tab_gaus_fmt$`MSE Red (%)` <- c(
+  NA_real_,
+  (1 - tab_gaus_fmt$MSE[2] / tab_gaus_fmt$MSE[1]) * 100,
+  (1 - tab_gaus_fmt$MSE[3] / tab_gaus_fmt$MSE[1]) * 100
 )
-cat(
-  "mean(Bias) Direct / Shared / Univariate: ",
-  mean(bias_dir_b), " / ", mean(bias_gibbs_b), " / ", mean(bias_ind_b), "\n",
-  sep = ""
+
+tab_gaus_fmt$MSE <- sprintf("%.1f", tab_gaus_fmt$MSE)
+tab_gaus_fmt$Coverage <- ifelse(
+  is.na(tab_gaus_fmt$Coverage),
+  "-",
+  sprintf("%.1f%%", 100 * as.numeric(tab_gaus_fmt$Coverage))
 )
-cat(
-  "mean(Coverage) Shared / Univariate: ",
-  mean(cov_gibbs_b), " / ", mean(cov_ind_b), "\n",
-  sep = ""
+tab_gaus_fmt$IS <- ifelse(
+  is.na(tab_gaus_fmt$IS),
+  "-",
+  sprintf("%.3f", as.numeric(tab_gaus_fmt$IS))
 )
-cat(
-  "mean(Interval Score) Shared / Univariate: ",
-  mean(IS_gibbs_b), " / ", mean(IS_ind_b), "\n",
-  sep = ""
+tab_gaus_fmt$`MSE Red (%)` <- ifelse(
+  is.na(tab_gaus_fmt$`MSE Red (%)`),
+  "-",
+  sprintf("%.2f%%", as.numeric(tab_gaus_fmt$`MSE Red (%)`))
 )
+
+tab_binom_fmt <- data.frame(
+  Type = c("Direct estimate", "Univariate model", "Multi-type model"),
+  MSE = c(mean(mse_dir_b), mean(mse_ind_b), mean(mse_gibbs_b)) * 1e3,
+  Coverage = c(NA_real_, mean(cov_ind_b), mean(cov_gibbs_b)),
+  IS = c(NA_real_, mean(IS_ind_b), mean(IS_gibbs_b)),
+  stringsAsFactors = FALSE,
+  check.names = FALSE
+)
+
+tab_binom_fmt$`MSE Red (%)` <- c(
+  NA_real_,
+  (1 - tab_binom_fmt$MSE[2] / tab_binom_fmt$MSE[1]) * 100,
+  (1 - tab_binom_fmt$MSE[3] / tab_binom_fmt$MSE[1]) * 100
+)
+
+tab_binom_fmt$MSE <- sprintf("%.2f", tab_binom_fmt$MSE)
+tab_binom_fmt$Coverage <- ifelse(
+  is.na(tab_binom_fmt$Coverage),
+  "-",
+  sprintf("%.1f%%", 100 * as.numeric(tab_binom_fmt$Coverage))
+)
+tab_binom_fmt$IS <- ifelse(
+  is.na(tab_binom_fmt$IS),
+  "-",
+  sprintf("%.3f", as.numeric(tab_binom_fmt$IS))
+)
+tab_binom_fmt$`MSE Red (%)` <- ifelse(
+  is.na(tab_binom_fmt$`MSE Red (%)`),
+  "-",
+  sprintf("%.2f%%", as.numeric(tab_binom_fmt$`MSE Red (%)`))
+)
+
+cat("\n--- Gaussian Response (Log Income) ---\n")
+print(tab_gaus_fmt)
+
+cat("\n--- Binomial Response (Poverty Rate) ---\n")
+print(tab_binom_fmt)
 
 save(
-  MO_county_sf,
-  income21.ed,
-  povrate21,
   Mu1_true,
   p_true,
+  Mu2_true,
+  var_D,
+  v,
   mse_dir_g,
   mse_gibbs_g,
   mse_ind_g,
   mse_dir_b,
   mse_gibbs_b,
   mse_ind_b,
-  bias_dir_g,
-  bias_gibbs_g,
-  bias_ind_g,
-  bias_dir_b,
-  bias_gibbs_b,
-  bias_ind_b,
   cov_gibbs_g,
   cov_ind_g,
   cov_gibbs_b,
@@ -184,9 +228,7 @@ save(
   IS_ind_g,
   IS_gibbs_b,
   IS_ind_b,
-  n_data,
-  nburn,
-  nsim,
-  nthin,
-  file = "empirical results.RData"
+  tab_gaus_fmt,
+  tab_binom_fmt,
+  file = "empirical results 0.5.RData"
 )
