@@ -1,7 +1,7 @@
 source("packages.r")
 load("SD cleaned.RData")
-load("empirical results.RData")
-
+load("empirical results 0.5.RData")
+cor()
 if (!exists("choose_pal")) {
   choose_pal <- hcl.colors(9, "YlOrRd", rev = TRUE)
 }

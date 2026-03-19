@@ -13,7 +13,7 @@ W_list <- nb2listw(tract_nb, style = "B", zero.policy = TRUE)
 B <- as.matrix(as_dgRMatrix_listw(W_list))
 
 eig <- eigen(B, symmetric = TRUE)
-idx <- large_abs(eig$values, 0.5)
+idx <- large_abs(eig$values, .25)
 S <- eig$vectors[, idx, drop = FALSE]
 
 X_1 <- as.matrix(cbind(1, X_white))
@@ -30,7 +30,7 @@ var_D <- income21.ed$lg_var * inflation_factor
 v_rate <- povrate21$var_pov
 v <- ((1 / (p_true * (1 - p_true)))^2 * v_rate) * inflation_factor
 
-n_data <- 100
+n_data <- 10
 nburn <- 1000
 nsim <- 1000
 nthin <- 1
@@ -60,9 +60,15 @@ for (i in seq_len(n_data)) {
   cat(sprintf("   Starting Dataset %d / %d\n", i, n_data))
   cat("==================================================\n")
 
-  set.seed(i)
+  set.seed(i+80)
 
-  drw <- draw_direct_independent(Mu1_true, Mu2_true, var_D, v)
+  # drw <- draw_direct_independent(Mu1_true, Mu2_true, var_D, v)
+  drw <- draw_direct_correlated(
+    Mu1_true,
+    Mu2_true,
+    var_D,
+    v,
+    rho = 0.9)
   des <- prep_design(drw$mu1, drw$mu2, var_D, v)
 
   Mu1_dir[, i] <- drw$mu1
@@ -83,11 +89,11 @@ for (i in seq_len(n_data)) {
     nsim = nsim,
     nthin = nthin,
     tau1 = 1,
-    tau2 = 0,
+    tau2 = -1,
     tau3 = 0,
-    a_zeta_1 = 2,
+    a_zeta_1 = 3,
     b_zeta_1 = 0.5,
-    a_zeta_2 = 2,
+    a_zeta_2 = 3,
     b_zeta_2 = 0.5,
     beta_prec = 0.01
   )
@@ -230,5 +236,5 @@ save(
   IS_ind_b,
   tab_gaus_fmt,
   tab_binom_fmt,
-  file = "empirical results 0.5.RData"
+  file = "empirical results cor 0.25.RData"
 )

@@ -458,6 +458,30 @@ draw_direct_independent <- function(Mu1_true, Mu2_true, var_D, v_logit) {
   list(mu1 = mu1, mu2 = mu2)
 }
 
+draw_direct_correlated <- function(Mu1_true, Mu2_true, var_D, v_logit, rho = 0.8) {
+  n <- length(Mu1_true)
+  mu1 <- numeric(n)
+  mu2 <- numeric(n)
+
+  for (i in seq_len(n)) {
+    sd1 <- sqrt(pmax(var_D[i], 1e-12))
+    sd2 <- sqrt(pmax(v_logit[i], 1e-12))
+    cov12 <- rho * sd1 * sd2
+
+    Sigma <- matrix(
+      c(sd1^2, cov12,
+        cov12, sd2^2),
+      nrow = 2, byrow = TRUE
+    )
+
+    e <- MASS::mvrnorm(1, mu = c(0, 0), Sigma = Sigma)
+    mu1[i] <- Mu1_true[i] + e[1]
+    mu2[i] <- pmin(pmax(Mu2_true[i] + e[2], -12), 12)
+  }
+
+  list(mu1 = mu1, mu2 = mu2)
+}
+
 prep_design <- function(mu1, mu2, var_D, v) {
   eps_p <- 1e-6
   eps_v <- 1e-12

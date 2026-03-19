@@ -4,7 +4,7 @@ library(sf)
 
 state_code <- "SD"
 year_use <- 2021
-z_90 <- qnorm(0.95)
+z_90 <- 1.645
 eps <- 1e-6
 
 total_pop_df <-
@@ -85,7 +85,8 @@ povrate21 <-
     pov_universe > 0
   ) %>%
   mutate(
-    pov_rate = pmin(pmax(pov_count / pov_universe, eps), 1 - eps),
+    pov_rate_raw = pmin(pmax(pov_count / pov_universe, eps), 1 - eps),
+    pov_rate = pmin(pmax((pov_count + 0.5) / (pov_universe + 1), eps), 1 - eps),
     pov_rate_moe = moe_prop(pov_count, pov_universe, pov_moe, pov_universe_moe),
     var_pov = (pov_rate_moe / z_90)^2,
     m = pov_rate * (1 - pov_rate) / pmax(var_pov, 1e-12)
