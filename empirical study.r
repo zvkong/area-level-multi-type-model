@@ -13,7 +13,7 @@ W_list <- nb2listw(tract_nb, style = "B", zero.policy = TRUE)
 B <- as.matrix(as_dgRMatrix_listw(W_list))
 
 eig <- eigen(B, symmetric = TRUE)
-idx <- large_abs(eig$values, .25)
+idx <- large_abs(eig$values, .5)
 S <- eig$vectors[, idx, drop = FALSE]
 
 X_1 <- as.matrix(cbind(1, X_white))
@@ -236,5 +236,5 @@ save(
   IS_ind_b,
   tab_gaus_fmt,
   tab_binom_fmt,
-  file = "empirical results cor 0.25.RData"
+  file = "empirical results cor 0.5.RData"
 )

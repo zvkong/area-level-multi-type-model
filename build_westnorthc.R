@@ -1,37 +1,11 @@
-library(tidycensus)
-library(dplyr)
-library(sf)
-library(purrr)
-library(spdep)
-library(spatialreg)
+source("packages.r")
+source("functions.r")
 
 states_use <- c("IA", "KS", "MN", "MO", "NE", "ND", "SD")
 year_use <- 2021
-z_90 <- qnorm(0.95)
+z_90 <- 1.645
 eps <- 1e-6
-
-fetch_acs_region <- function(variables, summary_var = NULL, geometry = FALSE, survey = "acs5") {
-  map_dfr(
-    states_use,
-    ~ get_acs(
-      geography = "tract",
-      variables = variables,
-      summary_var = summary_var,
-      state = .x,
-      geometry = geometry,
-      year = year_use,
-      survey = survey
-    )
-  )
-}
-
-select_large_abs <- function(values, q) {
-  if (!is.numeric(q) || length(q) != 1L || q <= 0 || q > 1) {
-    stop("q must be a single number in (0, 1].")
-  }
-  n_keep <- max(1L, ceiling(q * length(values)))
-  order(abs(values), decreasing = TRUE)[seq_len(n_keep)]
-}
+basis_q <- 0.25
 
 tract_population_df <-
   fetch_acs_region(
@@ -103,7 +77,7 @@ poverty_df <-
   ) %>%
   mutate(
     poverty_rate = pmin(pmax(poverty_count / poverty_universe, eps), 1 - eps),
-    poverty_rate_moe = moe_prop(
+    poverty_rate_moe = tidycensus::moe_prop(
       poverty_count,
       poverty_universe,
       poverty_count_moe,
@@ -164,7 +138,7 @@ region_tract_sf <-
   inner_join(tract_population_df, by = "GEOID") %>%
   inner_join(
     income_df %>%
-      select(
+      dplyr::select(
         GEOID,
         NAME_income = NAME,
         median_income,
@@ -179,7 +153,7 @@ region_tract_sf <-
   inner_join(bachelor_df, by = "GEOID") %>%
   inner_join(snap_df, by = "GEOID") %>%
   mutate(
-    NAME = coalesce(NAME, NAME_income),
+    NAME = dplyr::coalesce(NAME, NAME_income),
     prop_white = white_population / tract_population
   ) %>%
   filter(
@@ -197,7 +171,7 @@ region_tract_sf <-
 
 income_df <-
   region_tract_sf %>%
-  st_drop_geometry() %>%
+  sf::st_drop_geometry() %>%
   transmute(
     GEOID,
     NAME,
@@ -212,7 +186,7 @@ income_df <-
 
 poverty_df <-
   region_tract_sf %>%
-  select(
+  transmute(
     GEOID,
     NAME,
     tract_population,
@@ -235,12 +209,12 @@ x_snap <- region_tract_sf$prop_snap
 X_income <- as.matrix(cbind(1, x_bachelor, x_snap, x_white))
 X_poverty <- as.matrix(cbind(1, x_white, x_snap, x_bachelor))
 
-region_nb <- poly2nb(region_tract_sf, queen = TRUE)
-region_weights <- nb2listw(region_nb, style = "B", zero.policy = TRUE)
-adjacency_matrix <- as.matrix(as_dgRMatrix_listw(region_weights))
+region_nb <- spdep::poly2nb(region_tract_sf, queen = TRUE)
+region_weights <- spdep::nb2listw(region_nb, style = "B", zero.policy = TRUE)
+adjacency_matrix <- as.matrix(spatialreg::as_dgRMatrix_listw(region_weights))
 
 eigen_decomp <- eigen(adjacency_matrix, symmetric = TRUE)
-basis_index <- select_large_abs(eigen_decomp$values, 0.25)
+basis_index <- large_abs(eigen_decomp$values, basis_q)
 basis_matrix <- eigen_decomp$vectors[, basis_index, drop = FALSE]
 
 save(
@@ -254,5 +228,7 @@ save(
   X_poverty,
   adjacency_matrix,
   basis_matrix,
+  basis_q,
+  z_90,
   file = "westnorth_region_clean.RData"
 )

@@ -590,3 +590,55 @@ extract_estimates <- function(
     p_ind = rowMeans(plogis(fit_binom_uni$Mu.chain))
   )
 }
+
+
+make_facet_sf <- function(sf_obj, value_list, value_name) {
+  labs <- names(value_list)
+
+  build_one <- function(values, lab) {
+    out <- sf_obj
+    out[[value_name]] <- as.numeric(values)
+    out$model_type <- lab
+    out
+  }
+
+  dplyr::bind_rows(Map(build_one, value_list, labs))
+}
+
+plot_facets <- function(
+  sf_obj,
+  value_list,
+  value_name,
+  title,
+  legend_lab = value_name,
+  prob = 0.95,
+  choose_pal = grDevices::hcl.colors(9, "YlOrRd", rev = TRUE)
+) {
+  plot_df <- make_facet_sf(sf_obj, value_list, value_name)
+  vals <- plot_df[[value_name]]
+  vals <- vals[is.finite(vals)]
+  vmin <- min(vals, na.rm = TRUE)
+  vmax <- stats::quantile(vals, prob, na.rm = TRUE)
+
+  ggplot2::ggplot(plot_df) +
+    ggplot2::geom_sf(ggplot2::aes(fill = .data[[value_name]]), colour = NA) +
+    ggplot2::facet_wrap(~model_type) +
+    ggplot2::scale_fill_gradientn(
+      colours = choose_pal,
+      limits = c(vmin, vmax),
+      oob = scales::squish,
+      name = legend_lab
+    ) +
+    ggplot2::labs(
+      title = title,
+      caption = "Data source: 2017–2021 ACS 5-year estimates, U.S. Census Bureau"
+    ) +
+    ggplot2::theme_minimal(base_size = 12) +
+    ggplot2::theme(
+      panel.grid.major = ggplot2::element_blank(),
+      panel.grid.minor = ggplot2::element_blank(),
+      strip.background = ggplot2::element_rect(fill = "grey95", colour = NA),
+      strip.text = ggplot2::element_text(face = "bold"),
+      plot.title = ggplot2::element_text(face = "bold")
+    )
+}
