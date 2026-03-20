@@ -1,7 +1,8 @@
 source("packages.r")
 load("westnorth_region_clean.RData")
 load("region_results.RData")
-
+dim(income_df)
+length(p_direct)
 library(patchwork)
 
 out_dir <- "region_main_text_figures"
@@ -224,7 +225,7 @@ violin_df$Response <- factor(
 
 p_violin <- plot_violin_sd_reduction(
   violin_df,
-  title = "E. Tract-level posterior SD reduction"
+  title = "Tract-level posterior SD reduction"
 )
 
 summary_table <- tibble(
