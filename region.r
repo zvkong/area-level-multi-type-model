@@ -2,7 +2,7 @@ source("packages.r")
 source("functions.r")
 load("westnorth_region_clean.RData")
 
-choose_pal <- hcl.colors(9, "YlOrRd", rev = TRUE)
+choose_pal <- rev(RColorBrewer::brewer.pal(9, "RdBu"))
 
 eps <- 1e-6
 nburn <- 1000
@@ -76,6 +76,7 @@ p_income <- plot_facets(
   ),
   value_name = "log_median_income",
   title = "Log median income",
+  prob = 1,
   choose_pal = choose_pal
 )
 
@@ -122,7 +123,6 @@ p_var_poverty <- plot_facets(
   title = "Posterior variance: Binomial response",
   choose_pal = choose_pal
 )
-
 print(p_var_income)
 print(p_var_poverty)
 

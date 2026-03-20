@@ -1,245 +1,174 @@
 source("packages.r")
 load("SD cleaned.RData")
-load("empirical results cor 0.25.RData")
-if (!exists("choose_pal")) {
-  choose_pal <- hcl.colors(9, "YlOrRd", rev = TRUE)
+load("empirical results.RData")
+
+library(patchwork)
+
+out_dir <- "main_text_figures"
+if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+
+save_plot <- function(plot_obj, filename, width = 8, height = 5, dpi = 300) {
+  ggsave(
+    file.path(out_dir, filename),
+    plot = plot_obj,
+    width = width,
+    height = height,
+    dpi = dpi
+  )
 }
 
-make_metric_sf <- function(geo_sf, type, mse, coverage = NULL, is = NULL) {
-  geo_sf %>%
-    mutate(
-      type = type,
-      MSE = mse,
-      coverage = coverage,
-      IS = is
-    )
+theme_main <- theme_minimal(base_size = 11, base_family = "Arial") +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    plot.title = element_text(face = "bold", size = 14, family = "Arial"),
+    plot.subtitle = element_text(size = 10, family = "Arial"),
+    axis.title = element_text(size = 11, family = "Arial"),
+    axis.text = element_text(size = 10, family = "Arial"),
+    legend.title = element_text(size = 10, family = "Arial"),
+    legend.text = element_text(size = 9, family = "Arial"),
+    strip.text = element_text(face = "bold", size = 11, family = "Arial"),
+    plot.margin = margin(6, 8, 6, 8)
+  )
+
+map_theme <- theme_main +
+  theme(
+    panel.grid.major = element_blank(),
+    axis.title = element_blank(),
+    axis.text = element_text(size = 9, family = "Arial")
+  )
+
+resp_cols <- c(
+  "Binomial response" = "#E6A04B",
+  "Gaussian response" = "#6F8FB8"
+)
+
+make_sf_metric <- function(sf_obj, values, value_name) {
+  stopifnot(nrow(sf_obj) == length(values))
+  out <- sf_obj
+  out[[value_name]] <- as.numeric(values)
+  out
 }
 
-plot_spatial <- function(
-  df,
-  est,
-  type = "type",
-  title = NULL,
-  legend_lab = NULL,
-  prob = 0.9,
-  ncol = NULL
-) {
-  est_sym <- rlang::ensym(est)
-  type_sym <- rlang::ensym(type)
-  est_name <- rlang::as_string(est_sym)
-
-  vals <- dplyr::pull(df, !!est_sym)
+plot_reduction_map <- function(sf_obj, values, value_name, title, prob = 0.98) {
+  plot_df <- make_sf_metric(sf_obj, values, value_name)
+  vals <- plot_df[[value_name]]
   vals <- vals[is.finite(vals)]
+  vmax <- stats::quantile(abs(vals), prob, na.rm = TRUE)
+  vmax <- max(vmax, 1e-8)
 
-  vmin <- min(vals, na.rm = TRUE)
-  vmax <- stats::quantile(vals, prob, na.rm = TRUE)
-
-  if (is.null(title)) {
-    title <- paste0(est_name, " (", prob * 100, "% truncation)")
-  }
-  if (is.null(legend_lab)) {
-    legend_lab <- est_name
-  }
-
-  ggplot(df) +
-    geom_sf(aes(fill = !!est_sym), colour = NA) +
-    facet_wrap(vars(!!type_sym), ncol = ncol) +
-    scale_fill_gradientn(
-      colours = choose_pal,
-      name = legend_lab,
-      limits = c(vmin, vmax),
-      oob = scales::squish
+  ggplot(plot_df) +
+    geom_sf(aes(fill = .data[[value_name]]), colour = NA) +
+    scale_fill_gradient2(
+      low = "#3B4CC0",
+      mid = "grey96",
+      high = "#2A9D8F",
+      midpoint = 0,
+      limits = c(-vmax, vmax),
+      oob = scales::squish,
+      na.value = "grey90",
+      name = "Reduction (%)"
     ) +
     labs(
       title = title,
-      caption = "Data source: 2017–2021 5-year ACS, U.S. Census Bureau"
+      subtitle = "Positive values favor the Multi-type model."
     ) +
-    theme_minimal() +
+    map_theme
+}
+
+plot_violin_reduction <- function(df, yvar, title, ylab) {
+  ggplot(df, aes(x = Response, y = .data[[yvar]], fill = Response)) +
+    geom_violin(alpha = 0.9, trim = FALSE, linewidth = 0.4) +
+    geom_boxplot(width = 0.14, outlier.size = 0.5, alpha = 0.95) +
+    geom_hline(yintercept = 0, linetype = 2, colour = "red", linewidth = 0.8) +
+    scale_fill_manual(values = resp_cols) +
+    labs(
+      title = title,
+      subtitle = "Positive values favor the Multi-type model.",
+      x = NULL,
+      y = ylab
+    ) +
+    theme_main +
     theme(
-      strip.text = element_text(size = 11),
-      plot.title = element_text(size = 13, face = "bold"),
-      legend.title = element_text(size = 10),
-      legend.text = element_text(size = 9)
+      legend.position = "none",
+      panel.grid.major.x = element_blank()
     )
 }
 
-save_plot <- function(plot_obj, filename, width = 12, height = 4, dpi = 300) {
-  ggsave(filename, plot = plot_obj, width = width, height = height, dpi = dpi)
-}
+mse_red_pct_g <- 100 * (1 - mse_gibbs_g / mse_ind_g)
+mse_red_pct_b <- 100 * (1 - mse_gibbs_b / mse_ind_b)
 
-income_direct <- make_metric_sf(
-  tract_sf,
-  type = "Direct estimate",
-  mse = mse_dir_g,
-  coverage = NA_real_,
-  is = NA_real_
-)
+is_red_pct_g <- 100 * (1 - IS_gibbs_g / IS_ind_g)
+is_red_pct_b <- 100 * (1 - IS_gibbs_b / IS_ind_b)
 
-income_uni <- make_metric_sf(
-  tract_sf,
-  type = "Univariate model",
-  mse = mse_ind_g,
-  coverage = cov_ind_g,
-  is = IS_ind_g
-)
-
-income_multi <- make_metric_sf(
-  tract_sf,
-  type = "Multi-type model",
-  mse = mse_gibbs_g,
-  coverage = cov_gibbs_g,
-  is = IS_gibbs_g
-)
-
-pov_direct <- make_metric_sf(
-  tract_sf,
-  type = "Direct estimate",
-  mse = mse_dir_b,
-  coverage = NA_real_,
-  is = NA_real_
-)
-
-pov_uni <- make_metric_sf(
-  tract_sf,
-  type = "Univariate model",
-  mse = mse_ind_b,
-  coverage = cov_ind_b,
-  is = IS_ind_b
-)
-
-pov_multi <- make_metric_sf(
-  tract_sf,
-  type = "Multi-type model",
-  mse = mse_gibbs_b,
-  coverage = cov_gibbs_b,
-  is = IS_gibbs_b
-)
-
-income_dm <- bind_rows(
-  income_direct,
-  income_multi
-)
-
-pov_dm <- bind_rows(
-  pov_direct,
-  pov_multi
-)
-
-income_model_cmp <- bind_rows(
-  income_uni,
-  income_multi
-)
-
-pov_model_cmp <- bind_rows(
-  pov_uni,
-  pov_multi
-)
-
-p_income_dm <- plot_spatial(
-  income_dm,
-  est = MSE,
-  title = "Gaussian Response: MSE",
-  legend_lab = "MSE",
-  prob = 0.9
-)
-
-p_pov_dm <- plot_spatial(
-  pov_dm,
-  est = MSE,
-  title = "Binomial Response: MSE",
-  legend_lab = "MSE",
-  prob = 0.9
-)
-
-p_income_mse <- plot_spatial(
-  income_model_cmp,
-  est = MSE,
-  title = "Gaussian Response: MSE",
-  legend_lab = "MSE",
-  prob = 0.9
-)
-
-p_pov_mse <- plot_spatial(
-  pov_model_cmp,
-  est = MSE,
-  title = "Binomial Response: MSE",
-  legend_lab = "MSE",
-  prob = 0.9
-)
-
-p_income_is <- plot_spatial(
-  income_model_cmp,
-  est = IS,
-  title = "Gaussian Response: Interval Score",
-  legend_lab = "Interval Score",
-  prob = 0.9
-)
-
-p_pov_is <- plot_spatial(
-  pov_model_cmp,
-  est = IS,
-  title = "Binomial Response: Interval Score",
-  legend_lab = "Interval Score",
-  prob = 0.92
-)
-
-p_income_dm
-p_pov_dm
-p_income_mse
-p_pov_mse
-p_income_is
-p_pov_is
-
-tab_gaus <- tibble(
-  Type = c("Direct estimate", "Univariate model", "Multi-type model"),
-  MSE = c(mean(mse_dir_g), mean(mse_ind_g), mean(mse_gibbs_g)),
-  Coverage = c(NA_real_, mean(cov_ind_g), mean(cov_gibbs_g)),
-  IS = c(NA_real_, mean(IS_ind_g), mean(IS_gibbs_g))
-) %>%
-  mutate(
-    `MSE Red (%)` = c(
-      NA_real_,
-      (1 - MSE[2] / MSE[1]) * 100,
-      (1 - MSE[3] / MSE[1]) * 100
-    )
+violin_df <- dplyr::bind_rows(
+  tibble(
+    Response = "Binomial response",
+    mse_reduction = mse_red_pct_b,
+    is_reduction = is_red_pct_b
+  ),
+  tibble(
+    Response = "Gaussian response",
+    mse_reduction = mse_red_pct_g,
+    is_reduction = is_red_pct_g
   )
+)
 
-tab_gaus_fmt <- tab_gaus %>%
-  mutate(
-    MSE = sprintf("%.4f", MSE),
-    Coverage = ifelse(is.na(Coverage), "–", sprintf("%.1f%%", 100 * Coverage)),
-    IS = ifelse(is.na(IS), "–", sprintf("%.3f", IS)),
-    `MSE Red (%)` = ifelse(is.na(`MSE Red (%)`), "–", sprintf("%.2f%%", `MSE Red (%)`))
-  )
+violin_df$Response <- factor(
+  violin_df$Response,
+  levels = c("Binomial response", "Gaussian response")
+)
 
-tab_binom <- tibble(
-  Type = c("Direct estimate", "Univariate model", "Multi-type model"),
-  MSE = c(mean(mse_dir_b), mean(mse_ind_b), mean(mse_gibbs_b)),
-  Coverage = c(NA_real_, mean(cov_ind_b), mean(cov_gibbs_b)),
-  IS = c(NA_real_, mean(IS_ind_b), mean(IS_gibbs_b))
-) %>%
-  mutate(
-    `MSE Red (%)` = c(
-      NA_real_,
-      (1 - MSE[2] / MSE[1]) * 100,
-      (1 - MSE[3] / MSE[1]) * 100
-    )
-  )
+p1 <- plot_violin_reduction(
+  violin_df,
+  yvar = "mse_reduction",
+  title = "A. Tract-level MSE reduction",
+  ylab = "MSE reduction (%)"
+)
 
-tab_binom_fmt <- tab_binom %>%
-  mutate(
-    MSE = sprintf("%.5f", MSE),
-    Coverage = ifelse(is.na(Coverage), "–", sprintf("%.1f%%", 100 * Coverage)),
-    IS = ifelse(is.na(IS), "–", sprintf("%.3f", IS)),
-    `MSE Red (%)` = ifelse(is.na(`MSE Red (%)`), "–", sprintf("%.2f%%", `MSE Red (%)`))
-  )
+p2 <- plot_violin_reduction(
+  violin_df,
+  yvar = "is_reduction",
+  title = "B. Tract-level interval score reduction",
+  ylab = "Interval score reduction (%)"
+)
 
-tab_gaus_fmt
-tab_binom_fmt
+p3 <- plot_reduction_map(
+  tract_sf,
+  mse_red_pct_g,
+  "mse_red_pct_g",
+  "C. Gaussian response: tract-level MSE reduction"
+)
 
-save_plot(p_income_dm, "p_income_dm.png")
-save_plot(p_pov_dm, "p_pov_dm.png")
-save_plot(p_income_mse, "p_income_mse.png")
-save_plot(p_pov_mse, "p_pov_mse.png")
-save_plot(p_income_is, "p_income_is.png")
-save_plot(p_pov_is, "p_pov_is.png")
+p4 <- plot_reduction_map(
+  tract_sf,
+  mse_red_pct_b,
+  "mse_red_pct_b",
+  "D. Binomial response: tract-level MSE reduction"
+)
+
+final_fig <- (p1 | p2) / (p3 | p4) +
+  plot_layout(heights = c(1, 1.1))
+
+print(final_fig)
+
+save_plot(p1, "panel_A_violin_mse_reduction.png", width = 7.2, height = 4.8)
+save_plot(p2, "panel_B_violin_is_reduction.png", width = 7.2, height = 4.8)
+save_plot(p3, "panel_C_map_mse_reduction_gaussian.png", width = 7.8, height = 5.2)
+save_plot(p4, "panel_D_map_mse_reduction_binomial.png", width = 7.8, height = 5.2)
+
+ggsave(
+  file.path(out_dir, "main_text_four_panel_figure.png"),
+  plot = final_fig,
+  width = 14,
+  height = 11,
+  dpi = 300
+)
+
+ggsave(
+  file.path(out_dir, "main_text_four_panel_figure.pdf"),
+  plot = final_fig,
+  width = 14,
+  height = 11,
+  device = grDevices::cairo_pdf
+)

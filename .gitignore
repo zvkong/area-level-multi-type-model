@@ -5,5 +5,11 @@
 *.Rhistory
 *.Ruserdata
 
-.Rproj.user/
-.png
+*.Rproj.user/
+*.png
+*.csv
+diagnostic script.r
+empirical_figures_enhanced/
+main_text_figures/
+region_main_text_figures/
+result.r

@@ -1,0 +1,306 @@
+source("packages.r")
+load("westnorth_region_clean.RData")
+load("region_results.RData")
+
+library(patchwork)
+
+out_dir <- "region_main_text_figures"
+if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+
+save_plot <- function(plot_obj, filename, width = 8, height = 5, dpi = 300) {
+  ggsave(
+    file.path(out_dir, filename),
+    plot = plot_obj,
+    width = width,
+    height = height,
+    dpi = dpi
+  )
+}
+
+theme_main <- theme_minimal(base_size = 11, base_family = "Arial") +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    plot.title = element_text(face = "bold", size = 14, family = "Arial"),
+    plot.subtitle = element_text(size = 10, family = "Arial"),
+    axis.title = element_text(size = 11, family = "Arial"),
+    axis.text = element_text(size = 10, family = "Arial"),
+    legend.title = element_text(size = 10, family = "Arial"),
+    legend.text = element_text(size = 9, family = "Arial"),
+    strip.text = element_text(face = "bold", size = 11, family = "Arial"),
+    plot.margin = margin(6, 8, 6, 8)
+  )
+
+map_theme <- theme_main +
+  theme(
+    panel.grid.major = element_blank(),
+    axis.title = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  )
+
+resp_cols <- c(
+  "Binomial response" = "#E6A04B",
+  "Gaussian response" = "#6F8FB8"
+)
+
+make_surface_sf <- function(sf_obj, value_list, value_name) {
+  labs <- names(value_list)
+
+  build_one <- function(values, lab) {
+    out <- sf_obj
+    out[[value_name]] <- as.numeric(values)
+    out$model_type <- lab
+    out
+  }
+
+  dplyr::bind_rows(Map(build_one, value_list, labs))
+}
+
+plot_surface_facets <- function(
+  sf_obj,
+  value_list,
+  value_name,
+  title,
+  legend_lab,
+  prob = 0.98,
+  palette = hcl.colors(9, "YlGnBu")
+) {
+  plot_df <- make_surface_sf(sf_obj, value_list, value_name)
+  vals <- plot_df[[value_name]]
+  vals <- vals[is.finite(vals)]
+
+  vmin <- min(vals, na.rm = TRUE)
+  vmax <- stats::quantile(vals, prob, na.rm = TRUE)
+
+  ggplot(plot_df) +
+    geom_sf(aes(fill = .data[[value_name]]), colour = NA) +
+    facet_wrap(~model_type, nrow = 1) +
+    scale_fill_gradientn(
+      colours = palette,
+      limits = c(vmin, vmax),
+      oob = scales::squish,
+      na.value = "grey90",
+      name = legend_lab
+    ) +
+    labs(
+      title = title,
+      subtitle = "Direct estimate, Univariate model, and Multi-type model."
+    ) +
+    map_theme
+}
+
+make_sf_metric <- function(sf_obj, values, value_name) {
+  stopifnot(nrow(sf_obj) == length(values))
+  out <- sf_obj
+  out[[value_name]] <- as.numeric(values)
+  out
+}
+
+plot_sd_reduction_map <- function(
+  sf_obj,
+  values,
+  value_name,
+  title,
+  prob = 0.98
+) {
+  plot_df <- make_sf_metric(sf_obj, values, value_name)
+  vals <- plot_df[[value_name]]
+  vals <- vals[is.finite(vals)]
+  vmax <- stats::quantile(abs(vals), prob, na.rm = TRUE)
+  vmax <- max(vmax, 1e-8)
+
+  ggplot(plot_df) +
+    geom_sf(aes(fill = .data[[value_name]]), colour = NA) +
+    scale_fill_gradient2(
+      low = "#3B4CC0",
+      mid = "grey96",
+      high = "#2A9D8F",
+      midpoint = 0,
+      limits = c(-vmax, vmax),
+      oob = scales::squish,
+      na.value = "grey90",
+      name = "SD reduction (%)"
+    ) +
+    labs(
+      title = title,
+      subtitle = "Positive values favor the Multi-type model."
+    ) +
+    map_theme
+}
+
+plot_violin_sd_reduction <- function(df, title) {
+  ggplot(df, aes(x = Response, y = sd_reduction_pct, fill = Response)) +
+    geom_violin(alpha = 0.9, trim = FALSE, linewidth = 0.4) +
+    geom_boxplot(width = 0.14, outlier.size = 0.5, alpha = 0.95) +
+    geom_hline(yintercept = 0, linetype = 2, colour = "red", linewidth = 0.8) +
+    scale_fill_manual(values = resp_cols) +
+    labs(
+      title = title,
+      subtitle = "Positive values favor the Multi-type model.",
+      x = NULL,
+      y = "Posterior SD reduction (%)"
+    ) +
+    theme_main +
+    theme(
+      legend.position = "none",
+      panel.grid.major.x = element_blank()
+    )
+}
+
+mu1_direct <- mu1_direct
+mu1_uni <- mu1_uni_mean
+mu1_multi <- mu1_shared_mean
+
+p_direct <- p_direct
+p_uni <- p_uni_mean
+p_multi <- p_shared_mean
+
+sd_uni_g <- sqrt(pmax(var_mu1_uni, 1e-12))
+sd_multi_g <- sqrt(pmax(var_mu1_shared, 1e-12))
+
+sd_uni_b <- sqrt(pmax(var_p_uni, 1e-12))
+sd_multi_b <- sqrt(pmax(var_p_shared, 1e-12))
+
+sd_red_pct_g <- 100 * (1 - sd_multi_g / sd_uni_g)
+sd_red_pct_b <- 100 * (1 - sd_multi_b / sd_uni_b)
+
+var_ratio_g <- var_mu1_uni / pmax(var_mu1_shared, 1e-12)
+var_ratio_b <- var_p_uni / pmax(var_p_shared, 1e-12)
+
+p_mean_g <- plot_surface_facets(
+  sf_obj = region_tract_sf,
+  value_list = list(
+    "Direct estimate" = mu1_direct,
+    "Univariate model" = mu1_uni,
+    "Multi-type model" = mu1_multi
+  ),
+  value_name = "log_income",
+  title = "A. Gaussian response: posterior mean surface",
+  legend_lab = "Log income"
+)
+
+p_mean_b <- plot_surface_facets(
+  sf_obj = region_tract_sf,
+  value_list = list(
+    "Direct estimate" = p_direct,
+    "Univariate model" = p_uni,
+    "Multi-type model" = p_multi
+  ),
+  value_name = "poverty_rate",
+  title = "B. Binomial response: posterior mean surface",
+  legend_lab = "Poverty rate"
+)
+
+p_sd_map_g <- plot_sd_reduction_map(
+  sf_obj = region_tract_sf,
+  values = sd_red_pct_g,
+  value_name = "sd_red_pct_g",
+  title = "C. Gaussian response: posterior SD reduction"
+)
+
+p_sd_map_b <- plot_sd_reduction_map(
+  sf_obj = region_tract_sf,
+  values = sd_red_pct_b,
+  value_name = "sd_red_pct_b",
+  title = "D. Binomial response: posterior SD reduction"
+)
+
+violin_df <- dplyr::bind_rows(
+  tibble(
+    Response = "Binomial response",
+    sd_reduction_pct = sd_red_pct_b
+  ),
+  tibble(
+    Response = "Gaussian response",
+    sd_reduction_pct = sd_red_pct_g
+  )
+)
+
+violin_df$Response <- factor(
+  violin_df$Response,
+  levels = c("Binomial response", "Gaussian response")
+)
+
+p_violin <- plot_violin_sd_reduction(
+  violin_df,
+  title = "E. Tract-level posterior SD reduction"
+)
+
+summary_table <- tibble(
+  Response = c("Gaussian response", "Binomial response"),
+  `Mean posterior SD, Univariate model` = c(mean(sd_uni_g), mean(sd_uni_b)),
+  `Mean posterior SD, Multi-type model` = c(mean(sd_multi_g), mean(sd_multi_b)),
+  `Mean posterior SD reduction (%)` = c(mean(sd_red_pct_g), mean(sd_red_pct_b)),
+  `Median variance ratio (Univariate / Multi-type)` = c(median(var_ratio_g), median(var_ratio_b)),
+  `Tracts with lower posterior SD under the Multi-type model (%)` = c(
+    100 * mean(sd_multi_g < sd_uni_g),
+    100 * mean(sd_multi_b < sd_uni_b)
+  )
+)
+
+summary_table_fmt <- summary_table %>%
+  mutate(
+    across(-Response, ~ sprintf("%.2f", .x))
+  )
+
+print(summary_table_fmt)
+
+mean_surface_fig <- p_mean_g / p_mean_b
+uncertainty_map_fig <- p_sd_map_g | p_sd_map_b
+
+print(mean_surface_fig)
+print(uncertainty_map_fig)
+print(p_violin)
+
+save_plot(p_mean_g, "panel_A_gaussian_mean_surface.png", width = 12, height = 4.2)
+save_plot(p_mean_b, "panel_B_binomial_mean_surface.png", width = 12, height = 4.2)
+save_plot(p_sd_map_g, "panel_C_gaussian_sd_reduction.png", width = 7.2, height = 5.2)
+save_plot(p_sd_map_b, "panel_D_binomial_sd_reduction.png", width = 7.2, height = 5.2)
+save_plot(p_violin, "panel_E_violin_sd_reduction.png", width = 7.2, height = 4.8)
+
+ggsave(
+  file.path(out_dir, "region_mean_surface_figure.png"),
+  plot = mean_surface_fig,
+  width = 12,
+  height = 8.4,
+  dpi = 300
+)
+
+ggsave(
+  file.path(out_dir, "region_uncertainty_map_figure.png"),
+  plot = uncertainty_map_fig,
+  width = 14,
+  height = 5.5,
+  dpi = 300
+)
+
+ggsave(
+  file.path(out_dir, "region_mean_surface_figure.pdf"),
+  plot = mean_surface_fig,
+  width = 12,
+  height = 8.4,
+  device = grDevices::cairo_pdf
+)
+
+ggsave(
+  file.path(out_dir, "region_uncertainty_map_figure.pdf"),
+  plot = uncertainty_map_fig,
+  width = 14,
+  height = 5.5,
+  device = grDevices::cairo_pdf
+)
+
+ggsave(
+  file.path(out_dir, "region_sd_reduction_violin.pdf"),
+  plot = p_violin,
+  width = 7.2,
+  height = 4.8,
+  device = grDevices::cairo_pdf
+)
+
+write.csv(
+  summary_table,
+  file.path(out_dir, "region_uncertainty_summary.csv"),
+  row.names = FALSE
+)

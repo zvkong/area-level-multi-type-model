@@ -23,7 +23,6 @@ total_pop_df <-
   ) %>%
   filter(
     !is.na(tract_pop),
-    !is.na(tract_pop_moe),
     tract_pop > 0
   )
 

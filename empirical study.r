@@ -13,9 +13,8 @@ W_list <- nb2listw(tract_nb, style = "B", zero.policy = TRUE)
 B <- as.matrix(as_dgRMatrix_listw(W_list))
 
 eig <- eigen(B, symmetric = TRUE)
-idx <- large_abs(eig$values, .5)
+idx <- large_abs(eig$values, .25)
 S <- eig$vectors[, idx, drop = FALSE]
-
 X_1 <- as.matrix(cbind(1, X_white))
 X_2 <- as.matrix(cbind(1, X_white))
 
@@ -24,13 +23,12 @@ Mu1_true <- income21.ed$lg_income
 p_true <- pmin(pmax(povrate21$pov_rate, eps), 1 - eps)
 Mu2_true <- qlogis(p_true)
 N <- length(Mu1_true)
-
 inflation_factor <- 1
 var_D <- income21.ed$lg_var * inflation_factor
 v_rate <- povrate21$var_pov
 v <- ((1 / (p_true * (1 - p_true)))^2 * v_rate) * inflation_factor
 
-n_data <- 10
+n_data <- 100
 nburn <- 1000
 nsim <- 1000
 nthin <- 1
@@ -60,7 +58,7 @@ for (i in seq_len(n_data)) {
   cat(sprintf("   Starting Dataset %d / %d\n", i, n_data))
   cat("==================================================\n")
 
-  set.seed(i+80)
+  set.seed(i)
 
   # drw <- draw_direct_independent(Mu1_true, Mu2_true, var_D, v)
   drw <- draw_direct_correlated(
@@ -122,7 +120,7 @@ for (i in seq_len(n_data)) {
 }
 
 cat("\n\nAll datasets completed. Calculating evaluation metrics...\n")
-
+length(Mu1_true)
 mse_dir_g <- vapply(seq_len(N), function(i) MSE(Mu1_true[i], Mu1_dir[i, ]), 0.0)
 mse_gibbs_g <- vapply(seq_len(N), function(i) MSE(Mu1_true[i], G_gibbs[i, ]), 0.0)
 mse_ind_g <- vapply(seq_len(N), function(i) MSE(Mu1_true[i], G_ind[i, ]), 0.0)
@@ -236,5 +234,5 @@ save(
   IS_ind_b,
   tab_gaus_fmt,
   tab_binom_fmt,
-  file = "empirical results cor 0.5.RData"
+  file = "empirical results.RData"
 )

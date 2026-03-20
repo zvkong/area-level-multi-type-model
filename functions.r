@@ -590,8 +590,20 @@ extract_estimates <- function(
     p_ind = rowMeans(plogis(fit_binom_uni$Mu.chain))
   )
 }
-
-
+fetch_acs_region <- function(variables, summary_var = NULL, geometry = FALSE, survey = "acs5") {
+  map_dfr(
+    states_use,
+    ~ get_acs(
+      geography = "tract",
+      variables = variables,
+      summary_var = summary_var,
+      state = .x,
+      geometry = geometry,
+      year = year_use,
+      survey = survey
+    )
+  )
+}
 make_facet_sf <- function(sf_obj, value_list, value_name) {
   labs <- names(value_list)
 
@@ -612,7 +624,7 @@ plot_facets <- function(
   title,
   legend_lab = value_name,
   prob = 0.95,
-  choose_pal = grDevices::hcl.colors(9, "YlOrRd", rev = TRUE)
+  choose_pal = RColorBrewer::brewer.pal(9, "RdBu", rev = TRUE)
 ) {
   plot_df <- make_facet_sf(sf_obj, value_list, value_name)
   vals <- plot_df[[value_name]]

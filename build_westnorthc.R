@@ -20,7 +20,6 @@ tract_population_df <-
   ) %>%
   filter(
     !is.na(tract_population),
-    !is.na(tract_population_moe),
     tract_population > 0
   )
 
