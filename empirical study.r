@@ -234,5 +234,5 @@ save(
   IS_ind_b,
   tab_gaus_fmt,
   tab_binom_fmt,
-  file = "empirical results.RData"
+  file = "empirical results 3.RData"
 )

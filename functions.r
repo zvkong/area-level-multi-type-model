@@ -1,9 +1,18 @@
+# large_abs <- function(v, q) {
+#   if (!is.numeric(q) || length(q) != 1L || q <= 0 || q > 1) {
+#     stop("q must be a single number in (0, 1].")
+#   }
+#   n_keep <- max(1L, ceiling(q * length(v)))
+#   order(abs(v), decreasing = TRUE)[seq_len(n_keep)]
+# }
 large_abs <- function(v, q) {
-  if (!is.numeric(q) || length(q) != 1L || q <= 0 || q > 1) {
-    stop("q must be a single number in (0, 1].")
+  pos_idx <- which(v > 0)
+
+  if (length(pos_idx) == 0L) {
+    stop("No positive eigenvalues found.")
   }
-  n_keep <- max(1L, ceiling(q * length(v)))
-  order(abs(v), decreasing = TRUE)[seq_len(n_keep)]
+
+  pos_idx
 }
 
 cs_index <- function(eig_values, q) {
