@@ -5,8 +5,8 @@ load("westnorth_region_clean.RData")
 choose_pal <- rev(RColorBrewer::brewer.pal(9, "RdBu"))
 
 eps <- 1e-6
-nburn <- 1000
-nsim <- 1000
+nburn <- 5000
+nsim <- 5000
 nthin <- 1
 beta_prec <- 0.001
 
