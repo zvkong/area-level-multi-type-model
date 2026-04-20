@@ -350,10 +350,10 @@ p_var_scatter <-
     labels = scales::label_number(accuracy = 0.01)
   ) +
   labs(
-    title = expression("Tract-level posterior variance comparison (" * times * 10^{-3} * ")"),
+    title = expression("Tract-level posterior variance comparison (" %*% 10^{-3} ~ ")"),
     subtitle = "Points below the red line favor the Multi-type model.",
-    x = expression("Posterior variance: Univariate model (" * times * 10^{-3} * ")"),
-    y = expression("Posterior variance: Multi-type model (" * times * 10^{-3} * ")")
+    x = expression("Posterior variance: Univariate model (" %*% 10^{-3} ~ ")"),
+    y = expression("Posterior variance: Multi-type model (" %*% 10^{-3} ~ ")")
   ) +
   theme_main +
   theme(

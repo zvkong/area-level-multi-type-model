@@ -205,7 +205,6 @@ tab_binom_fmt$`MSE Red (%)` <- ifelse(
   "-",
   sprintf("%.2f%%", as.numeric(tab_binom_fmt$`MSE Red (%)`))
 )
-load("empirical results 3.RData")
 cat("\n--- Gaussian Response (Log Income) ---\n")
 print(tab_gaus_fmt)
 
@@ -234,5 +233,5 @@ save(
   IS_ind_b,
   tab_gaus_fmt,
   tab_binom_fmt,
-  file = "empirical results 3.RData"
+  file = "empirical results.RData"
 )

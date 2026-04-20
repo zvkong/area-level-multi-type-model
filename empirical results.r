@@ -1,6 +1,6 @@
 source("packages.r")
 load("SD cleaned.RData")
-load("empirical results 3.RData")
+load("empirical results.RData")
 
 library(patchwork)
 
