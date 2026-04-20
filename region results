@@ -305,3 +305,64 @@ write.csv(
   file.path(out_dir, "region_uncertainty_summary.csv"),
   row.names = FALSE
 )
+
+plot_variance_scatter <- function(df, title) {
+  ggplot(df, aes(x = var_uni, y = var_multi, colour = Response)) +
+    geom_point(shape = 16, alpha = 0.35, size = 1.1) +
+    geom_abline(
+      slope = 1,
+      intercept = 0,
+      linetype = 2,
+      colour = "red",
+      linewidth = 0.8
+    ) +
+    facet_wrap(~Response, scales = "free") +
+    scale_colour_manual(values = resp_cols) +
+    scale_x_log10() +
+    scale_y_log10() +
+    labs(
+      title = title,
+      subtitle = "Points below the red line favor the Multi-type model.",
+      x = "Posterior variance: Univariate model",
+      y = "Posterior variance: Multi-type model"
+    ) +
+    theme_main +
+    theme(
+      legend.position = "none",
+      panel.grid.major.x = element_blank()
+    )
+}
+variance_scatter_df <- dplyr::bind_rows(
+  tibble(
+    Response = "Gaussian response",
+    var_uni = pmax(var_mu1_uni, 1e-12),
+    var_multi = pmax(var_mu1_shared, 1e-12)
+  ),
+  tibble(
+    Response = "Binomial response",
+    var_uni = pmax(var_p_uni, 1e-12),
+    var_multi = pmax(var_p_shared, 1e-12)
+  )
+)
+
+variance_scatter_df$Response <- factor(
+  variance_scatter_df$Response,
+  levels = c("Binomial response", "Gaussian response")
+)
+
+p_var_scatter <- plot_variance_scatter(
+  variance_scatter_df,
+  title = "Tract-level posterior variance comparison"
+)
+
+print(p_var_scatter)
+
+save_plot(p_var_scatter, "panel_F_variance_scatter.png", width = 7.4, height = 4.8)
+
+ggsave(
+  file.path(out_dir, "region_variance_scatter.pdf"),
+  plot = p_var_scatter,
+  width = 7.4,
+  height = 4.8,
+  device = grDevices::cairo_pdf
+)

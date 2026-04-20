@@ -51,61 +51,73 @@ income_df <-
     log_income_variance > 0
   )
 
-poverty_df <-
+poverty_geom <-
   fetch_acs_region(
-    variables = "B17001_002",
-    summary_var = "B17001_001",
-    geometry = TRUE
+    variables = "S1701_C03_001",
+    geometry = TRUE,
+    survey = "acs5"
   ) %>%
   arrange(GEOID) %>%
+  dplyr::select(GEOID, geometry)
+
+poverty_df <-
+  fetch_acs_region(
+    variables = c(
+      poverty_rate_pct = "S1701_C03_001",
+      poverty_count = "S1701_C02_001"
+    ),
+    geometry = FALSE,
+    survey = "acs5"
+  ) %>%
+  arrange(GEOID) %>%
+  tidyr::pivot_wider(
+    names_from = variable,
+    values_from = c(estimate, moe)
+  ) %>%
   transmute(
     GEOID,
     NAME,
-    poverty_universe = summary_est,
-    poverty_universe_moe = summary_moe,
-    poverty_count = estimate,
-    poverty_count_moe = moe,
-    geometry
-  ) %>%
-  filter(
-    !is.na(poverty_universe),
-    !is.na(poverty_universe_moe),
-    !is.na(poverty_count),
-    !is.na(poverty_count_moe),
-    poverty_universe > 0
-  ) %>%
-  mutate(
-    poverty_rate = pmin(pmax(poverty_count / poverty_universe, eps), 1 - eps),
-    poverty_rate_moe = tidycensus::moe_prop(
-      poverty_count,
-      poverty_universe,
-      poverty_count_moe,
-      poverty_universe_moe
-    ),
+    poverty_universe = NA_real_,
+    poverty_universe_moe = NA_real_,
+    poverty_count = estimate_poverty_count,
+    poverty_count_moe = moe_poverty_count,
     poverty_count_variance = (poverty_count_moe / z_90)^2,
+    poverty_rate_raw = pmin(pmax(estimate_poverty_rate_pct / 100, eps), 1 - eps),
+    poverty_rate = pmin(pmax(estimate_poverty_rate_pct / 100, eps), 1 - eps),
+    poverty_rate_moe = moe_poverty_rate_pct / 100,
     poverty_rate_variance = (poverty_rate_moe / z_90)^2,
     effective_n = poverty_rate * (1 - poverty_rate) / pmax(poverty_rate_variance, 1e-12)
   ) %>%
   filter(
+    !is.na(poverty_count),
+    !is.na(poverty_count_moe),
+    !is.na(poverty_rate),
+    !is.na(poverty_rate_moe),
     is.finite(poverty_rate),
     is.finite(poverty_rate_variance),
     is.finite(effective_n),
     poverty_rate_variance > 0,
     effective_n > 0
-  )
-
+  ) %>%
+  left_join(poverty_geom, by = "GEOID") %>%
+  sf::st_as_sf()
 white_df <-
   fetch_acs_region(
-    variables = "B01001A_001",
-    geometry = FALSE
+    variables = "DP05_0037PE",
+    geometry = FALSE,
+    survey = "acs5"
   ) %>%
   arrange(GEOID) %>%
   transmute(
     GEOID,
-    white_population = estimate
+    prop_white = estimate / 100
   ) %>%
-  filter(!is.na(white_population))
-
+  filter(
+    !is.na(prop_white),
+    is.finite(prop_white),
+    prop_white >= 0,
+    prop_white <= 1
+  )
 bachelor_df <-
   fetch_acs_region(
     variables = "DP02_0068PE",
@@ -152,8 +164,7 @@ region_tract_sf <-
   inner_join(bachelor_df, by = "GEOID") %>%
   inner_join(snap_df, by = "GEOID") %>%
   mutate(
-    NAME = dplyr::coalesce(NAME, NAME_income),
-    prop_white = white_population / tract_population
+    NAME = dplyr::coalesce(NAME, NAME_income)
   ) %>%
   filter(
     !is.na(NAME),
