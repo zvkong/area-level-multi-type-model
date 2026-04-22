@@ -116,7 +116,8 @@ block_sampler_share_RE <- function(
   if (is.null(zeta_1_init)) zeta_1_init <- rep(0, N)
   if (is.null(zeta_2_init)) zeta_2_init <- rep(0, N)
 
-  inv_sigma_tau <- 0.25
+  # inv_sigma_tau <- 0.25
+  inv_sigma_tau <- 0.01
   I_r <- Matrix::Diagonal(r)
   I_p1 <- Matrix::Diagonal(p_1)
   I_p2 <- Matrix::Diagonal(p_2)
